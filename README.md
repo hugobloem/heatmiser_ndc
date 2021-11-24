@@ -1,5 +1,6 @@
 # HA-heatmiser-component
 Custom Home Assistant Component for Heatmiser PRT-N Stats (version1.1.4)
+
 This component accesses the stats via an IP to RS485 adaptor (I use an ATC_1000)
 
 To use this custom component:
@@ -42,10 +43,10 @@ The configuration parameter scan_interval determines how frequently Hass reads t
 The component now supports 3 HVAC MODES - "Auto", "Heat" and "Off" and implements the climate services Turn on, Turn off & Set Hvac Mode. 
 Turn off sets the stat into frost protect mode, Turn on sets it to normal (ie heating if actual temp < target temp)). 
 Set Hvac mode on or off is the same as turn on / turn off.
-The modes can be controlled from the UI, or by calling the relevant services from developer tools. Setting mode to "Auto" or "Heat" has the same effect - the resulting mode in the stat will depend on the current temp.
+The modes can be controlled from the UI, or by calling the relevant services from developer tools or automations. Setting mode to "Auto" or "Heat" has the same effect - the resulting mode in the stat will depend on the current temp.
 
 ### Frost Protect temp
-The standard climate component supports a humidity level (while the heatmiser stat does not). So the code now allows the frost protect temp to be read and modified via the humidity level. It accepts values in the range 7 to 17 as per the PRT stat.
+The standard climate component supports a humidity level (while the heatmiser stat does not). So the code now allows the frost protect temp to be read and modified via the humidity level. It accepts values in the range 7 to 17 as per the PRT stat. Thermostat cards will display this "humidity" and allow it to be changed.
 
 ### Logging
 The component logs lots of events at debug, error, info & warning levels. Logging levels can be controlled by including something like the following in the configuration.yaml file
@@ -74,7 +75,7 @@ data:
 ```
 
 ### Extra State attributes
-The code now reads all the thermostat variables/parameters and writes these as additional state attributes (about 45 of them). These may be viewed in the Developer Tools section of the UI (see state variables)
+The code now reads all the thermostat variables/parameters and writes these as additional state attributes (about 45 of them). These may be viewed in the Developer Tools section of the UI (see state variables). At some point in the future, I will provide services to change the r/w variables.
 
 
 
