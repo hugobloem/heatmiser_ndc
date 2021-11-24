@@ -278,6 +278,100 @@ class HeatmiserStat:
         _LOGGER.debug(f'get heat state {value}')
         return value
 
+    # extra state attributes
+
+    def get_vendor_id(self):
+        return self.dcb [2]
+
+    def get_version (self) :
+        return self.dcb [3] & 0x7f
+
+    def get_floor_limit_state (self) :
+        return self.dcb [3] & 0x80
+
+    def get_model (self) :
+        return self.dcb [4]
+
+    def get_sw_diff (self) :
+        return self.dcb [6]
+
+    def get_cal_offset (self) :
+        return self.dcb[8] * 256 + self.dcb[9]
+
+    def get_output_delay (self) :
+        return self.dcb[10]
+
+    def get_address (self) :
+        return self.dcb[11]
+
+    def get_updown_limit (self) :
+        return self.dcb[12]
+
+    def get_sensor_select (self) :
+        return self.dcb[13]
+
+    def get_opt_start (self) :
+        return self.dcb[14]
+
+    def get_rate_of_change (self) :
+        return self.dcb[15]
+
+    def get_floor_limit (self) :
+        return self.dcb[19]
+
+    def get_floor_limit_enable (self) :
+        return self.dcb[20]
+
+    def get_key_lock (self) :
+        return self.dcb[22]
+
+    def get_hol_hours (self) :
+        return self.dcb[24] * 256 + self.dcb[25]
+
+    def get_temp_hold (self) :
+        return self.dcb[26] * 256 + self.dcb[27]
+
+    def get_remote_air_temp (self) :
+        return (self.dcb[28] * 256 + self.dcb[29])/10
+
+    def get_floor_temp (self) :
+        return (self.dcb[30] * 256 + self.dcb[31])/10
+
+    def get_built_in_temp (self) :
+        return (self.dcb[32] * 256 + self.dcb[33])/10
+
+    def get_error_code (self) :
+        return self.dcb[34]
+
+    def get_time (self) :
+        _day_of_week = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        return f'{_day_of_week[self.dcb[36]]} {self.dcb[37]:0>2d}:{self.dcb[38]:0>2d}:{self.dcb[39]:0>2d}' 
+
+    def _comfort_string (self, idx) :
+        # returns comfort setting string with 4 entries in the form 
+        # hh:mm tt, hh:mm tt, hh:mm tt, hh:mm tt,
+        _string = (
+            f'{self.dcb[idx]:0>2d}:{self.dcb[idx+1]:0>2d} {self.dcb[idx+2]}; '
+            f'{self.dcb[idx+3]:0>2d}:{self.dcb[idx+4]:0>2d} {self.dcb[idx+5]}; '
+            f'{self.dcb[idx+6]:0>2d}:{self.dcb[idx+7]:0>2d} {self.dcb[idx+8]}; '
+            f'{self.dcb[idx+9]:0>2d}:{self.dcb[idx+10]:0>2d} {self.dcb[idx+11]};'
+        )
+        return _string
+
+    def get_weekday (self) :
+        return self._comfort_string (40)
+
+    def get_weekend (self) :
+        return self._comfort_string (52)
+        
+    def get_day (self, dayno) :
+        if self.dcb[16] == 0 :   # 5/2 mode
+            return '00:00 00; 00:00 00; 00:00 00; 00:00 00;'
+        else :
+            return self._comfort_string (dayno*12 + 52)
+
+    # Now the set methods
+    
     def set_target_temp(self, temp):
         _LOGGER.debug(f'set target temp {temp}')
         if 35 < temp < 5:

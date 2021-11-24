@@ -1,5 +1,5 @@
 # HA-heatmiser-component
-Custom Home Assistant Component for Heatmiser PRT-N Stats
+Custom Home Assistant Component for Heatmiser PRT-N Stats (version1.1.4)
 This component accesses the stats via an IP to RS485 adaptor (I use an ATC_1000)
 
 To use this custom component:
@@ -72,4 +72,9 @@ service: logger.set_level
 data:
   custom_components.heatmiser_ndc: warning
 ```
+
+### Extra State attributes
+The code now reads all the thermostat variables/parameters and writes these as additional state attributes (about 45 of them). These may be viewed in the Developer Tools section of the UI (see state variables)
+
+
 

@@ -97,6 +97,45 @@ class HMV3Stat(ClimateEntity):
         result = SUPPORT_TARGET_TEMPERATURE + SUPPORT_TARGET_HUMIDITY
         _LOGGER.debug(f'supported features returning {result}')
         return result
+        
+    @property
+    def extra_state_attributes(self) -> dict:
+        
+        return {
+            "vendor id": self.therm.get_vendor_id(),
+            "version": self.therm.get_version(),
+            "floor limit state": self.therm.get_floor_limit_state(),
+            "model": self.therm.get_model(),
+            "sw diff" : self.therm.get_sw_diff(),
+            "cal offset" : self.therm.get_cal_offset(),
+            "output delay" : self.therm.get_output_delay(),
+            "address" : self.therm.get_address(),
+            "up/down limit" : self.therm.get_updown_limit(),
+            "sensor select" : self.therm.get_sensor_select(),
+            "opt start" : self.therm.get_opt_start(),
+            "rate of change" : self.therm.get_rate_of_change(),
+            "program mode" : self.therm.get_program_mode(),
+            "floor limit" : self.therm.get_floor_limit(),
+            "floor limit enable" : self.therm.get_floor_limit_enable(),
+            "key lock" : self.therm.get_key_lock(),
+            "hol hours" : self.therm.get_hol_hours(),
+            "temp hold" : self.therm.get_temp_hold(),
+            "remote air temp" : self.therm.get_remote_air_temp(),
+            "floor temp" : self.therm.get_floor_temp(),
+            "built in temp" : self.therm.get_built_in_temp(),
+            "error code" : self.therm.get_error_code(),
+            "heat state" : self.therm.get_heat_state(),
+            "time" : self.therm.get_time(),
+            "weekday" : self.therm.get_weekday(),
+            "weekend" : self.therm.get_weekend(),
+            "mon" : self.therm.get_day(1),
+            "tue" : self.therm.get_day(2),
+            "wed" : self.therm.get_day(3),
+            "thu" : self.therm.get_day(4),
+            "fri" : self.therm.get_day(5),
+            "sat" : self.therm.get_day(6),
+            "sun" : self.therm.get_day(7),
+        } 
 
     @property
     def name(self):
