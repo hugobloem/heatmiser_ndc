@@ -343,9 +343,9 @@ class HeatmiserStat:
     def get_error_code (self) :
         return self.dcb[34]
 
-    def get_time (self) :
+    def get_day_and_time (self) :
         _day_of_week = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-        return f'{_day_of_week[self.dcb[36]]} {self.dcb[37]:0>2d}:{self.dcb[38]:0>2d}:{self.dcb[39]:0>2d}' 
+        return f'{_day_of_week[self.dcb[36]-1]} {self.dcb[37]:0>2d}:{self.dcb[38]:0>2d}:{self.dcb[39]:0>2d}' 
 
     def _comfort_string (self, idx) :
         # returns comfort setting string with 4 entries in the form 
@@ -358,13 +358,13 @@ class HeatmiserStat:
         )
         return _string
 
-    def get_weekday (self) :
+    def get_weekday_settings (self) :
         return self._comfort_string (40)
 
-    def get_weekend (self) :
+    def get_weekend_settings (self) :
         return self._comfort_string (52)
         
-    def get_day (self, dayno) :
+    def get_day_settings (self, dayno) :
         if self.dcb[16] == 0 :   # 5/2 mode
             return '00:00 00; 00:00 00; 00:00 00; 00:00 00;'
         else :

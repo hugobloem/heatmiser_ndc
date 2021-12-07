@@ -100,8 +100,7 @@ class HMV3Stat(ClimateEntity):
         
     @property
     def extra_state_attributes(self) -> dict:
-        
-        return {
+        _result = {
             "vendor id": self.therm.get_vendor_id(),
             "version": self.therm.get_version(),
             "floor limit state": self.therm.get_floor_limit_state(),
@@ -125,17 +124,19 @@ class HMV3Stat(ClimateEntity):
             "built in temp" : self.therm.get_built_in_temp(),
             "error code" : self.therm.get_error_code(),
             "heat state" : self.therm.get_heat_state(),
-            "time" : self.therm.get_time(),
-            "weekday" : self.therm.get_weekday(),
-            "weekend" : self.therm.get_weekend(),
-            "mon" : self.therm.get_day(1),
-            "tue" : self.therm.get_day(2),
-            "wed" : self.therm.get_day(3),
-            "thu" : self.therm.get_day(4),
-            "fri" : self.therm.get_day(5),
-            "sat" : self.therm.get_day(6),
-            "sun" : self.therm.get_day(7),
+            "time" : self.therm.get_day_and_time(),
+            "weekday" : self.therm.get_weekday_settings(),
+            "weekend" : self.therm.get_weekend_settings(),
+            "mon" : self.therm.get_day_settings(1),
+            "tue" : self.therm.get_day_settings(2),
+            "wed" : self.therm.get_day_settings(3),
+            "thu" : self.therm.get_day_settings(4),
+            "fri" : self.therm.get_day_settings(5),
+            "sat" : self.therm.get_day_settings(6),
+            "sun" : self.therm.get_day_settings(7),
         } 
+        _LOGGER.debug(f'extra state attributes returning {_result}')
+        return _result
 
     @property
     def name(self):
