@@ -64,7 +64,7 @@ CONFIG_SCHEMA = vol.Schema({DOMAIN: COMPONENT_SCHEMA}, extra=vol.ALLOW_EXTRA)
 
 
 def setup_platform(hass, config, add_entities, discovery_info=None):
-    """Set up the heatmiser thermostat."""
+    """Set up the heatmiser platform"""
     _LOGGER.info("Setting up platform")
     statobject = heatmiser.HeatmiserStat
 

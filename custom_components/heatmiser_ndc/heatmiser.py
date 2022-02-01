@@ -59,11 +59,11 @@ class HM_UH1:
                 raise ValueError(f'Stat already present {thermostat.address}')
             else:
                 self.thermostats[thermostat.address] = thermostat
-                _LOGGER.debug(f'Thermosta: {thermostat.address} registered')
+                _LOGGER.debug(f'Thermostat: {thermostat.address} registered')
         except ValueError:
             pass
         except Exception as err:
-            _LOGGER.error(f'Not a HeatmiiserThermostat Object {err}')
+            _LOGGER.error(f'Not a Heatmiser Thermostat Object {err}')
         return self._serport
 
 
@@ -204,10 +204,10 @@ class HeatmiserStat:
     # After calls of set methods, HA itself calls update to update internal dcb
 
     def read_dcb(self):
-        """ Reads all data from stat by sending stad read message to serial i/f
-        reading reply and verifying
-        returns data as list after stripping out frame header and checksum
-        """
+        # Reads all data from stat 
+        #   sends standard read message to serial i/f
+        #   reads reply and verifies
+        #   returns data as list after stripping out frame header and checksum
         
         stat = self.address
         _LOGGER.debug(f'read dcb for : {stat}')
@@ -250,8 +250,8 @@ class HeatmiserStat:
         return mode
 
     def get_current_temp(self):
-        # Home assistant climate entity only has 1 current temperature variable
-        # but the stat has floor sensor and remote or builtin air sensor
+        # Climate entity only has 1 current temperature variable
+        # but the stat has a floor and remote or builtin air sensor
         # this method returns the air sensor (builtin or remote) if present, otherwise floor sensor
 
         senselect = self.dcb[13]
