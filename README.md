@@ -75,7 +75,10 @@ data:
 ```
 
 ### Extra State attributes
-The code now reads all the thermostat variables/parameters and writes these as additional state attributes (about 45 of them). These may be viewed in the Developer Tools section of the UI (see state variables). At some point in the future, I will provide services to change the r/w variables.
+The code now reads all the thermostat variables/parameters and writes these as additional state attributes (about 45 of them). These may be viewed in the Developer Tools section of the UI (see state variables). 
+I use the Lovelace flex_table_card to display the attributes I want to see in the UI ((see below)
+At some point in the future, I will provide services to change the r/w variables.
 
 
+![Heating view](https://user-images.githubusercontent.com/11159909/152197535-5014f185-cfe9-4b93-83ff-f026750e026e.jpg)
 
