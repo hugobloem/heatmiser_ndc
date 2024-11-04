@@ -13,22 +13,20 @@ from typing import List
 from . import heatmiser
 import voluptuous as vol
 
-from homeassistant.components.climate import PLATFORM_SCHEMA, ClimateEntity
-from homeassistant.components.climate.const import (
-    HVAC_MODE_HEAT,
-    HVAC_MODE_OFF,
-    HVAC_MODE_AUTO,
-    SUPPORT_TARGET_TEMPERATURE,
-    SUPPORT_TARGET_HUMIDITY
-)
+from homeassistant.components.climate import (
+    PLATFORM_SCHEMA,
+    ClimateEntity,
+    ClimateEntityFeature,
+    HVACMode
+) 
+
 from homeassistant.const import (
     ATTR_TEMPERATURE,
     CONF_HOST,
     CONF_ID,
     CONF_NAME,
     CONF_PORT,
-    TEMP_CELSIUS,
-    TEMP_FAHRENHEIT,
+    UnitOfTemperature,
     PRECISION_WHOLE,
 )
 
@@ -65,7 +63,7 @@ CONFIG_SCHEMA = vol.Schema({DOMAIN: COMPONENT_SCHEMA}, extra=vol.ALLOW_EXTRA)
 
 def setup_platform(hass, config, add_entities, discovery_info=None):
     """Set up the heatmiser platform"""
-    _LOGGER.info("Setting up platform")
+    _LOGGER.info("Setting up platform - Code version 1.2.1")
     statobject = heatmiser.HeatmiserStat
 
     host = config[CONF_HOST]
@@ -73,16 +71,27 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     statlist = config[CONF_THERMOSTATS]
     uh1_hub = heatmiser.HM_UH1(host, port)
 
-    # Add all entities - True in call requests update before adding
-    # necessary to setup the dcb fields
+    # Add all entities - False in call means update is not called before adding
+    # because this slows down startup which generates warning message
+    # However, entities are added with zero initial values
+    # These are soon updated after setup completes
+    
     add_entities([HMV3Stat(statobject, stat, uh1_hub)
-                  for stat in statlist], True, )
+                  for stat in statlist], False, )
 
     _LOGGER.info("Platform setup complete")
 
 
 class HMV3Stat(ClimateEntity):
     """Representation of a HeatmiserV3 thermostat."""
+
+    _attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF, HVACMode.AUTO]
+    _attr_supported_features = (
+        ClimateEntityFeature.TARGET_TEMPERATURE
+        | ClimateEntityFeature.TURN_OFF
+        | ClimateEntityFeature.TURN_ON
+    )
+    _enable_turn_on_off_backwards_compatibility = False
 
     def __init__(self, therm, device, uh1):
         """Initialize the thermostat."""
@@ -92,11 +101,6 @@ class HMV3Stat(ClimateEntity):
         _LOGGER.info(f'Initialised thermostat {self._name}')
         _LOGGER.debug(f'Init uh1 = {uh1}')
 
-    @property
-    def supported_features(self):
-        result = SUPPORT_TARGET_TEMPERATURE + SUPPORT_TARGET_HUMIDITY
-        _LOGGER.debug(f'supported features returning {result}')
-        return result
         
     @property
     def extra_state_attributes(self) -> dict:
@@ -154,7 +158,7 @@ class HMV3Stat(ClimateEntity):
     def temperature_unit(self):
 
         _temp_format = self.therm.get_temperature_format()
-        value = TEMP_CELSIUS if (_temp_format == 0) else TEMP_FAHRENHEIT
+        value = UnitOfTemperature.CELSIUS if (_temp_format == 0) else UnitOfTemperature.FAHRENHEIT
         _LOGGER.debug(f'temperature unit returning {value}')
         return value
 
@@ -166,11 +170,11 @@ class HMV3Stat(ClimateEntity):
         _run_mode=self.therm.get_run_mode()
         _heat_state =self.therm.get_heat_state()
         if _run_mode == 1:   #frost protect
-            value = HVAC_MODE_OFF
+            value = HVACMode.OFF
         elif _heat_state == 0:  # not heating
-            value = HVAC_MODE_AUTO
+            value = HVACMode.AUTO
         else:
-            value = HVAC_MODE_HEAT
+            value = HVACMode.HEAT
         _LOGGER.debug(f'hvac mode returning {value}')
         return value
 
@@ -178,7 +182,7 @@ class HMV3Stat(ClimateEntity):
         # If Off , set stat to frost protect mode
         # If Heat or Auto, set stat to normal
         _LOGGER.debug(f'set hvac mode to {hvac_mode}')
-        if hvac_mode == HVAC_MODE_OFF:
+        if hvac_mode == HVACMode.OFF:
             self.therm.set_run_mode(1)
         else:
             self.therm.set_run_mode(0)
@@ -186,12 +190,12 @@ class HMV3Stat(ClimateEntity):
     def turn_off(self):
         """Turn off the stat"""
         _LOGGER.debug(f'turn off called')
-        self.set_hvac_mode(HVAC_MODE_OFF)
+        self.set_hvac_mode(HVACMode.OFF)
 
     def turn_on(self):
         """Turn on the zone"""
         _LOGGER.debug(f'turn on called')
-        self.set_hvac_mode(HVAC_MODE_AUTO)
+        self.set_hvac_mode(HVACMode.AUTO)
 
     @property
     def target_temperature_step(self):
@@ -216,7 +220,7 @@ class HMV3Stat(ClimateEntity):
         """Return the list of available hvac operation modes"""
         # Need to be a subset of HVAC_MODES.
         
-        result = [HVAC_MODE_HEAT, HVAC_MODE_OFF, HVAC_MODE_AUTO]
+        result = self._attr_hvac_modes
         _LOGGER.debug(f'hvac modes returning {result}')
         return result
 
