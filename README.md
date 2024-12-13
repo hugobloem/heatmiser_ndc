@@ -1,5 +1,5 @@
 # HA-heatmiser-component
-Custom Home Assistant Component for Heatmiser PRT-N Stats (version1.1.6)
+Custom Home Assistant Component for Heatmiser PRT-N Stats (version 1.2.1)
 
 This component accesses the stats via an IP to RS485 adaptor (I use an ATC_1000)
 
@@ -82,3 +82,7 @@ At some point in the future, I will provide services to change the r/w variables
 
 ![Heating view](https://user-images.githubusercontent.com/11159909/152197535-5014f185-cfe9-4b93-83ff-f026750e026e.jpg)
 
+### Deprecated Constants
+This version updates the various constants that have been deprecated, and were generating warning messages.
+ie HVAC_MODE_HEAT, HVAC_MODE_OFF, HVAC_MODE_AUTO, SUPPORT_TARGET_TEMPERATURE, SUPPORT_TARGET_HUMIDITY
+Also TURN_ON, TURN_OFF, 

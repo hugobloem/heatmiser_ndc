@@ -230,7 +230,7 @@ class HeatmiserStat:
         return value
 
     def get_thermostat_id(self):
-        value = self.dcb[11]
+        value = self.address
         _LOGGER.debug(f'get thermostat id {value}')
         return value
 
