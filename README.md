@@ -34,8 +34,7 @@ My own heatmiser system has 15 stats connected via a single ATC_1000 RS485 adapt
 
 There is a COM_TIMEOUT in heatmiser.py (currently 0.8 secs), so it takes c12 seconds to update all stats. This works fine on my own system, but if you have lots of CRC errors reported in the log, then it may be worth increasing this a little to say 1 second or more.
 
-Hass includes the first update as part of initialisation, so with this many stats, it will take longer than 10 seconds, so a warning is to be expected, along the lines of 
-  "Setup of climate platform heatmiser_ndc is taking over 10 seconds".
+The first update is no longer done as part of initialisation, so the warning message "Setup of climate platform heatmiser_ndc is taking over 10 seconds" is no longer generated. The climate entities are made available quickly but will have 0 values. These will be updated shortly after initialisation completes.
 
 The configuration parameter scan_interval determines how frequently Hass reads the stat values after scan_interval seconds. The shorter this interval, the more quickly Hass will detect changes in temperature or heating mode. The fewer stats you have, the smaller this interval can be.
 
