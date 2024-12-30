@@ -63,43 +63,42 @@ CONFIG_SCHEMA = vol.Schema({DOMAIN: COMPONENT_SCHEMA}, extra=vol.ALLOW_EXTRA)
 
 def setup_platform(hass, config, add_entities, discovery_info=None):
     """Set up the heatmiser platform"""
-    _LOGGER.info("Setting up platform - Code version 1.2.1")
-    statobject = heatmiser.HeatmiserStat
+    _LOGGER.info("Setting up platform - Code version 1.4.1")
 
     host = config[CONF_HOST]
     port = str(config.get(CONF_PORT))
     statlist = config[CONF_THERMOSTATS]
-    uh1_hub = heatmiser.HM_UH1(host, port)
+    serial_hub = heatmiser.HM_RS485(host, port)
 
     # Add all entities - False in call means update is not called before adding
     # because this slows down startup which generates warning message
     # However, entities are added with zero initial values
     # These are soon updated after setup completes
     
-    add_entities([HMV3Stat(statobject, stat, uh1_hub)
+    add_entities([HMV3Stat(stat, serial_hub)
                   for stat in statlist], False, )
 
     _LOGGER.info("Platform setup complete")
 
 
 class HMV3Stat(ClimateEntity):
-    """Representation of a HeatmiserV3 thermostat."""
+    """Representation of a Heatmiser V3 PRT thermostat."""
 
     _attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF, HVACMode.AUTO]
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE
         | ClimateEntityFeature.TURN_OFF
         | ClimateEntityFeature.TURN_ON
+        | ClimateEntityFeature.TARGET_HUMIDITY
     )
     _enable_turn_on_off_backwards_compatibility = False
 
-    def __init__(self, therm, device, uh1):
-        """Initialize the thermostat."""
-
-        self.therm = therm(device[CONF_ID], "prt", uh1)
+    def __init__(self, device, serial_if):
+        
         self._name = device[CONF_NAME]
+        self.therm = heatmiser.HeatmiserStat(device[CONF_ID], self._name, serial_if)
+        
         _LOGGER.info(f'Initialised thermostat {self._name}')
-        _LOGGER.debug(f'Init uh1 = {uh1}')
 
         
     @property
@@ -109,6 +108,7 @@ class HMV3Stat(ClimateEntity):
             "version": self.therm.get_version(),
             "floor limit state": self.therm.get_floor_limit_state(),
             "model": self.therm.get_model(),
+            # TBD Temp format goes in here
             "sw diff" : self.therm.get_sw_diff(),
             "cal offset" : self.therm.get_cal_offset(),
             "output delay" : self.therm.get_output_delay(),
@@ -138,6 +138,8 @@ class HMV3Stat(ClimateEntity):
             "fri" : self.therm.get_day_settings(5),
             "sat" : self.therm.get_day_settings(6),
             "sun" : self.therm.get_day_settings(7),
+            "read stats" : self.therm.get_read_statistics(),
+            "write stats" : self.therm.get_write_statistics(),
         } 
         _LOGGER.debug(f'extra state attributes returning {_result}')
         return _result
@@ -156,7 +158,6 @@ class HMV3Stat(ClimateEntity):
         
     @property
     def temperature_unit(self):
-
         _temp_format = self.therm.get_temperature_format()
         value = UnitOfTemperature.CELSIUS if (_temp_format == 0) else UnitOfTemperature.FAHRENHEIT
         _LOGGER.debug(f'temperature unit returning {value}')
@@ -178,55 +179,31 @@ class HMV3Stat(ClimateEntity):
         _LOGGER.debug(f'hvac mode returning {value}')
         return value
 
-    def set_hvac_mode(self, hvac_mode):
-        # If Off , set stat to frost protect mode
-        # If Heat or Auto, set stat to normal
-        _LOGGER.debug(f'set hvac mode to {hvac_mode}')
-        if hvac_mode == HVACMode.OFF:
-            self.therm.set_run_mode(1)
-        else:
-            self.therm.set_run_mode(0)
-
-    def turn_off(self):
-        """Turn off the stat"""
-        _LOGGER.debug(f'turn off called')
-        self.set_hvac_mode(HVACMode.OFF)
-
-    def turn_on(self):
-        """Turn on the zone"""
-        _LOGGER.debug(f'turn on called')
-        self.set_hvac_mode(HVACMode.AUTO)
-
     @property
     def target_temperature_step(self):
-        """Return the supported step of target temperature."""
         _LOGGER.debug(f'target temp step returning {PRECISION_WHOLE}')
         return PRECISION_WHOLE
 
+    # TBD - max , min temps should be different if stat is in F not C
+    # TBD ditto humidity (proxy for frostor humidity ie frost setting
     @property
     def min_temp(self):
-        """Return the minimum temperature."""
         _LOGGER.debug(f'min temp returning 5')
         return 5
 
     @property
     def max_temp(self):
-        """Return the maximum temperature."""
         _LOGGER.debug(f'max temp returning 35')
         return 35
 
     @property
     def hvac_modes(self) -> List[str]:
-        """Return the list of available hvac operation modes"""
-        # Need to be a subset of HVAC_MODES.
-        
         result = self._attr_hvac_modes
         _LOGGER.debug(f'hvac modes returning {result}')
         return result
 
     @property
     def current_temperature(self):
-        """Return the current temperature depending on sensor select"""
         temp = self.therm.get_current_temp()
         _LOGGER.debug(f'Current temperature returned {temp}')
         return (temp)
@@ -239,19 +216,16 @@ class HMV3Stat(ClimateEntity):
 
     @property
     def min_humidity(self):
-        """Return the minimum humidity."""
         _LOGGER.debug(f'min humidity returning 7')
         return 7
 
     @property
     def max_humidity(self):
-        """Return the maximum humidity."""
         _LOGGER.debug(f'max humidity returning 17')
         return 17
 
     @property
     def current_humidity(self):
-        """Return the current humidity."""
         # same as target humidity
         temp = self.therm.get_frost_temp()
         _LOGGER.debug(f'Current humidity returned {temp}')
@@ -259,35 +233,40 @@ class HMV3Stat(ClimateEntity):
 
     @property
     def target_humidity(self):
-        """Return the target humidity """
         temp = self.therm.get_frost_temp()
         _LOGGER.debug(f'Target humidity returned {temp}')
         return temp
+    
+    def set_hvac_mode(self, hvac_mode):
+        # If Off , set stat to frost protect mode
+        # If Heat or Auto, set stat to normal
+        _LOGGER.debug(f'set hvac mode to {hvac_mode}')
+        if hvac_mode == HVACMode.OFF:
+            self.therm.set_run_mode(1)
+        else:
+            self.therm.set_run_mode(0)
+       
+    def turn_off(self):
+        _LOGGER.debug(f'turn off called')
+        self.set_hvac_mode(HVACMode.OFF)
+        
+    def turn_on(self):
+        _LOGGER.debug(f'turn on called')
+        self.set_hvac_mode(HVACMode.AUTO)
 
     def set_temperature(self, **kwargs):
-        """Set new target temperature."""
         temperature = kwargs.get(ATTR_TEMPERATURE)
         _LOGGER.debug(f'Set target temp: {temperature}')
-
-        try:
-            self._target_temperature = int(temperature)
-            self.therm.set_target_temp(self._target_temperature)
-        except ValueError as err:
-            _LOGGER.error(
-                f'Error - Set Temperature exception {err} for {self._name}')
+        self._target_temperature = int(temperature)
+        self.therm.set_target_temp(self._target_temperature)
 
     def set_humidity(self, humidity):
-        """Set new target humidity."""
         _hum = int(humidity) 
         _LOGGER.debug(f'set humidity to {_hum}')
         self.therm.set_frost_temp(_hum)
-        
+
     def update(self):
         """Get the latest data."""
         _LOGGER.debug(f'Update started for {self._name}')
-
-        try:
-            self.therm.read_dcb()
-        except ValueError as err:
-            _LOGGER.error(f'Error - Update exception {err} for {self._name}')
+        self.therm.read_dcb()
         _LOGGER.debug(f'Update done')

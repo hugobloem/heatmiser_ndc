@@ -1,12 +1,10 @@
 """
-    Heatmiser library to access Heatmiser thermostats (PRT-N) via an RS485 interface
-    Multiple stats may be connected to each UH1 wiring hub
-    library designed to be used by Home Assistant and other apps
+    Heatmiser library to access multiple Heatmiser thermostats (PRT-N) via an RS485 interface
+    library designed to be used by Home Assistant and other apps. 
+    Try to keep all Home Assistant stuff out of here
 """
 # NDC Dec 2020
-# from previous great work by Neil Trimboy 2011, and others
-# Oct 2021 Sort out HVAC modes
-# Nov 2021 supprort humidity as proxy for frost protect
+# See changelog
 
 
 import serial
@@ -15,9 +13,11 @@ import asyncio
 import serial_asyncio
 import time
 
-# Heatmiser read / write codes
-FUNC_READ = 0
-FUNC_WRITE = 1
+# use a semaphore to stop concurrent access to serial line.
+# Hass seems to call Update on multiple stats in sequence. However writes (to change setpoint or frost setting)
+# may occur in middle of a read, causing line errors (eg CRC)
+import threading
+sema = threading.Semaphore(1)
 
 # COMM SETTINGS
 COM_PORT = 6  # 1 less than com port, USB is 6=com7, ether is 9=10
@@ -27,12 +27,14 @@ COM_PARITY = serial.PARITY_NONE
 COM_STOP = serial.STOPBITS_ONE
 COM_TIMEOUT = 0.8 # seconds
 
+# Serial line retries
+MAX_RETRIES = 5
+
+
 _LOGGER = logging.getLogger(__name__)
 
-class HM_UH1:
-    """ The Heatmiser UH1 interface that holds the serial
-    connection, and can have multiple thermostats
-    """
+class HM_RS485:
+    """ The Heatmiser RS485 interface with multiple thermostats """
 
     def __init__(self, ipaddress, port):
         _LOGGER.info(f'Initialising interface {ipaddress} : {port}')
@@ -51,24 +53,18 @@ class HM_UH1:
 
 
     def registerThermostat(self, thermostat):
-        """Registers a thermostat with the UH1"""
-        try:
-            # check we have a heatmiser stat object
-            type(thermostat) == HeatmiserStat
-            if thermostat.address in self.thermostats.keys():
-                raise ValueError(f'Stat already present {thermostat.address}')
-            else:
-                self.thermostats[thermostat.address] = thermostat
-                _LOGGER.debug(f'Thermostat: {thermostat.address} registered')
-        except ValueError:
-            pass
-        except Exception as err:
-            _LOGGER.error(f'Not a Heatmiser Thermostat Object {err}')
+        """Registers a thermostat with the serial interface"""
+            
+        if thermostat.address in self.thermostats.keys():
+            _LOGGER.error(f'Stat already present {thermostat.address}')
+        else:
+            self.thermostats[thermostat.address] = thermostat
+            _LOGGER.debug(f'Thermostat: {thermostat.address} registered')
         return self._serport
 
 
 class CRC16:
-    """CRC function (aka CCITT) mechanism used by the Heatmiser V3 protocol."""
+    """CRC function (aka CCITT) """
     LookupHi = [
         0x00, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70,
         0x81, 0x91, 0xa1, 0xb1, 0xc1, 0xd1, 0xe1, 0xf1
@@ -108,146 +104,202 @@ class CRC16:
 class HeatmiserStat:
     """ Represents a heatmiser thermostat 
     Provides methods to:
-       read all fields from the stat in raw state
-       get individual fields eg target temp, frost temp, status, heating,  temp format etc
-       set writable stat fields eg target temp, frost protect temp, floor max temp etc
+       read_dcb -  read all fields from the stat into dcb, in raw state
+       get_...... -extracts individual fields from dcb eg target temp, frost temp, status, heating,  temp format etc
+       set_...    - writes a single field to the stat eg target temp, frost protect temp, floor max temp etc
+       After calls of set methods, HA itself then calls update to update internal dcb
     """
     
-    def __init__(self, address, model, uh1):
-        _LOGGER.debug(f'HeatmiserStat init addr {address}')
+    def __init__(self, address, name, rs485):
+        # address is stat no.
+        #name is passed in solely to make error reporting more meaningful
+        _LOGGER.debug(f'HeatmiserStat init stat {address} {name}')
         self.address = address
+        self.name = name
         #Allocate space and initialise dcb to 0. Necessary to avoid crash, if first read from stat fails 
         self.dcb = [0] * 160
 
-        self.conn = uh1.registerThermostat(self)  # register stat to ser i/f
+        # Initialise statistics - [read, write]
+        self.rwcount = [0,0]   #read/write count
+        self.crccount = [0,0]  #crc errors - soft
+        self.ndrcount = [0,0]  #No Data Read NDR errors - soft
+        self.othcount = [0,0]  #Other errors - soft
+        self.hardcount = [0,0] #if retries fail - hard
+
+        self.conn = rs485.registerThermostat(self)  # register stat to ser i/f
         _LOGGER.debug(f'Init done. Conn = {self.conn}')
 
     def _lohibytes(self, value):
         # splits value into 2 bytes, returns lo, hi bytes
         return value & 0xff, (value >> 8) & 0xff
 
-    def _verify(self, stat, exp_func, datal):
+    def _verify(self, stat, function, datal):
         # verifies reply from stat by checking CRC and header fields
-        # raises ValueError exception if any fields invalid
+        # if any fields invalid, increments error counter and raises ValueError exception 
+        # function : 0=read or 1=write
+        # check most frequent things first ie NDR or CRC errors
 
-        _LOGGER.debug(f'Verifying {stat}')
+        _LOGGER.debug(f'Verifying {stat} function {function}')
         length = len(datal)
         if length < 3:
-            raise ValueError("No data read")
+            self.ndrcount [function] +=1
+            raise ValueError(f'No data read {length}')
+        
         checksum = datal[length - 2:]
         rxmsg = datal[:length - 2]
         crc = CRC16()   # Initialises the CRC
         if crc.run(rxmsg) != checksum:
+            self.crccount [function] +=1
             raise ValueError(f'Bad CRC, length {length}')
+        
         dest = datal[0]
         if (dest != 129 and dest != 160):
-            raise ValueError("dest is ILLEGAL")
-
+            self.othcount [function] +=1
+            raise ValueError(f'Bad dest addr {dest}')
+        
         source = datal[3]
-        if (source < 1 or source > 32 or source != stat):
-            raise ValueError(f'source is bad {source}')
+        if source != stat:
+            self.othcount [function] +=1
+            raise ValueError(f'Bad src addr {source}')
 
         func = datal[4]
+        if func != 1 and func != 0:
+            self.othcount [function] +=1
+            raise ValueError(f'Bad Func {func}')
+        if func != function:
+            self.othcount [function] +=1
+            raise ValueError(f'Wrong Func Code {func} vs {function}')
+        
         frame_len = datal[2] * 256 + datal[1]
-        if func != FUNC_WRITE and func != FUNC_READ:
-            raise ValueError("Func Code is UNKNWON")
-        if func != exp_func:
-            raise ValueError("Func Code is UNEXPECTED")
-        if func == FUNC_WRITE and frame_len != 7:
-            raise ValueError("Unexpected Write length")
+        if function == 1 and frame_len != 7:
+            self.othcount [function] +=1
+            raise ValueError("Write length <> 7")
         if length != frame_len:
-            raise ValueError("response length MISMATCHES header")
-
-        # message appears OK
+            self.othcount [function] +=1
+            raise ValueError(f'reply length {length}<> header {frame_len}')
+        
+        # otherwise message appears OK
 
     def _send_msg(self, message):
-        # Adds CRC, then sends message to serial interface, & reads reply
-        # max read length = 75 in 5/2 mode, 159 in 7day mode ? TBD check these
-        # This is the only interface to the serial connection.
+        # Sends message to serial line, after adding CRC
+        # This is the only method to write to the serial line
 
         _LOGGER.debug(f'Send msg - length: {len(message)}')
+        
         crc = CRC16()
         string = bytes(message + crc.run(message))  # add CRC
         try:
             self.conn.write(string)
         except serial.SerialTimeoutException:
+            # never seen this
             _LOGGER.error("Serial timeout on write")
 
-        datal = list(self.conn.read(159))
-        _LOGGER.debug(f'Reply read, length {len(datal)}')
-        _LOGGER.debug(f'Data= {datal}')
-        return datal
+    def _read_reply(self):
+        # Read reply from serial line
+        # max read length = 75 in 5/2 mode, 159 in 7day mode ?
+        # TBD check these
+        # This is the only method to read the serial line
 
-    def _write_stat(self, stat, address, value):
-        # writes a single value to the stat at address in dcb
+        reply = list(self.conn.read(159))
+        _LOGGER.debug(f'Reply read, length {len(reply)} Data = {reply}')
+        return reply
 
-        _LOGGER.debug(f'write stat no, addr, value = {stat}  {address}  {value}')
+    def _write_stat(self, stat, index, value):
+        # writes a single value to the stat
+        # index gives position in dcb
+        # TBD - simplify len(payload) should be 1,  & lohibytes of 1
+        # TBD master addr = 129 or 160, what does touchpad use
+
+        _LOGGER.debug(f'write stat- no, index, value = {stat} {index} {value}')
+        self.rwcount [1] +=1  # inc write count
         payload = [value]  # makes a list of 1 item
-        startlo, starthi = self._lohibytes(address)
+        startlo, starthi = self._lohibytes(index)
         lengthlo, lengthhi = self._lohibytes(len(payload))
+        
+        #form message to write value to stat
         msg = [stat, 10+len(payload), 129, 1,
                startlo, starthi, lengthlo, lengthhi]
-        datal = self._send_msg(msg+payload)
-        self._verify(stat, 1, datal)
-        _LOGGER.debug(f'write stat reply = {datal}')
-
-        # try a little sleep to ensure stat returns proper value on next update
-        # this should be OK for rest of Hass, as this runs in sync worker thread
-        time.sleep(1.0)
-
-        return datal
-
-    # Methods to get or set thermostat attributes
-    # read_dcb used to read all data from stat
-    # get methods extract fields from internal stored values
-    # set methods write the single field to the stat
-    # After calls of set methods, HA itself calls update to update internal dcb
+        
+        sema.acquire()
+        for _retries in range(MAX_RETRIES):
+            try:
+                _LOGGER.debug(f'write stat- Retries {_retries}')
+                self._send_msg(msg+payload)
+                data = self._read_reply ()
+                self._verify(stat, 1, data)
+                _LOGGER.debug(f'write stat reply = {data}')
+            except ValueError as err:
+                _LOGGER.debug(f'write stat exception {err} for {self.name}')
+                # sleep a bit and retry
+                # should be OK for Hass, we run in sync worker thread
+                time.sleep(0.5)
+                continue
+            else:
+                break  #  no exception, skips else block below
+        else:
+            # Exhausted retries
+            self.hardcount [1] +=1
+            _LOGGER.error(f'Error - Write stat - too many retries - {self.name}')     
+        #
+        sema.release()
 
     def read_dcb(self):
         # Reads all data from stat 
         #   sends standard read message to serial i/f
         #   reads reply and verifies
-        #   returns data as list after stripping out frame header and checksum
+        #   sets up dcb so later calls can extract values
+        # verify raises various excpetions if errors are found
         
         stat = self.address
-        _LOGGER.debug(f'read dcb for : {stat}')
-
-        # form standard read command to read all fields from stat
+        # form standard read all command
+        # TBD master addr = 129 or 160 ??
         msg = [stat, 10, 129, 0, 0, 0, 0xff, 0xff]
-        datal = self._send_msg(msg)
-        self._verify(stat, 0, datal)
-        self.dcb = datal[9:len(datal)-2]  # strip off header & crc
-        return self.dcb
+        self.rwcount [0] +=1  # increment read count
+        sema.acquire()   # stop Hass multithreading calls to the serial line
+
+        for _retries in range(MAX_RETRIES):
+            try:
+                _LOGGER.debug(f'read dcb- stat {stat} Retries {_retries}')
+                self._send_msg(msg)  # send to serial line
+                data = self._read_reply ()  #get reply
+                self._verify(stat, 0, data)  #check reply is ok
+                self.dcb = data[9:len(data)-2]  # strip off header & crc
+            except ValueError as err:
+                _LOGGER.debug(f'read dcb exception {err} for {self.name}')
+                 # sleep a bit and retry
+                # should be OK for Hass, we run in sync worker thread
+                time.sleep(0.5)
+                continue
+            else:
+                break  #  no exception, skips else block below
+        else:
+            # Exhausted retries
+            self.hardcount [0] +=1
+            _LOGGER.error(f'Error - Read dcb - too many retries - {self.name}')
+        
+        sema.release()
+
+
+# Now methods to get thermostat attributes by extracting values from dcb
+# No point in logging as the calling method in Climate.py logs the values
 
     def get_frost_temp(self):
-        value = self.dcb[17]
-        _LOGGER.debug(f'get frost temp {value}')
-        return value
+        return self.dcb[17]
 
     def get_target_temp(self):
-        value = self.dcb[18]
-        _LOGGER.debug(f'get target temp {value}')
-        return value
+        return self.dcb[18]
 
     def get_thermostat_id(self):
-        value = self.address
-        _LOGGER.debug(f'get thermostat id {value}')
-        return value
+        return self.address
 
     def get_temperature_format(self):
-        value = self.dcb[5]
-        _LOGGER.debug(f'get temp format {value}')
-        return value
+        return self.dcb[5]
 
     def get_sensor_selection(self):
-        sensor = self.dcb[13]
-        _LOGGER.debug(f'get sensor select ={sensor}')
-        return sensor
+        return self.dcb[13]
 
     def get_program_mode(self):
-        mode = self.dcb[16]
-        _LOGGER.debug(f'get prog mode {mode}')
-        return mode
+        return self.dcb[16]
 
     def get_current_temp(self):
         # Climate entity only has 1 current temperature variable
@@ -264,19 +316,13 @@ class HeatmiserStat:
 
         value = (self.dcb[index] * 256 +
                  self.dcb[index + 1])/10
-
-        _LOGGER.debug(f'get current temp {value}')
         return value
 
     def get_run_mode(self):
-        value = self.dcb[23]  # 1 = frost protect, o = normal (heating)
-        _LOGGER.debug(f'get run mode {value}')
-        return value
+        return self.dcb[23]  # 1 = frost protect, o = normal (heating)
 
     def get_heat_state(self):
-        value = self.dcb[35]  # 1 = heating, o = not
-        _LOGGER.debug(f'get heat state {value}')
-        return value
+        return self.dcb[35]  # 1 = heating, o = not
 
     # extra state attributes
 
@@ -370,28 +416,32 @@ class HeatmiserStat:
         else :
             return self._comfort_string (dayno*12 + 52)
 
+    def get_read_statistics (self) :
+        # return read stats - over time large number of reads, so show error %
+        # returns string "Err% CRC NDR Oth Hrd" for read transactions
+        _total = self.crccount[0] + self.ndrcount[0] + self.othcount[0]
+        _count = self.rwcount[0]
+        _err_rate = 0 if _count == 0 else _total/_count
+        return f'{_err_rate:.3%} {self.crccount[0]} {self.ndrcount[0]} {self.othcount[0]} {self.hardcount[0]}'
+        
+    def get_write_statistics (self) :
+        # far fewer writes, so return overall count
+        # returns string "Count CRC NDR Oth Hrd" for write transactions
+        return f'{self.rwcount[1]} {self.crccount[1]} {self.ndrcount[1]} {self.othcount[1]} {self.hardcount[1]}'
+
     # Now the set methods
+    # in future there will be more of these to set time, comfort levels, modes etc
     
     def set_target_temp(self, temp):
-        _LOGGER.debug(f'set target temp {temp}')
-        if 35 < temp < 5:
-            raise ValueError(f'Attempt to set bad target temp {temp}')
-        self._write_stat(self.address, 18, temp)
-        return True
+        if 35 >= temp >= 5:
+            self._write_stat(self.address, 18, temp)
 
     def set_frost_temp(self, temp):
-        _LOGGER.debug(f'set frost temp {temp}')
-        if 17 < temp < 7:
-            raise ValueError(f'Attempt to set bad frost temp {temp}')
-        self._write_stat(self.address, 17, temp)
-        return True
+        if 7 <= temp <= 17:
+            self._write_stat(self.address, 17, temp)
 
     def set_run_mode(self, state):
-        #sets run mode to 0 =normal, or 1 = frost protect
-        _LOGGER.debug(f'set run mode {state}')
-        if (state != 0 and state != 1):
-            raise ValueError(f'Attempt to set bad run mode {state}')
-        self._write_stat(self.address, 23, state)
-        return True
+        if state == 0 or state == 1: # 0 =normal, 1 =frost protect
+            self._write_stat(self.address, 23, state)
 
     
