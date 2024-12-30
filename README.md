@@ -87,12 +87,18 @@ ie HVAC_MODE_HEAT, HVAC_MODE_OFF, HVAC_MODE_AUTO, SUPPORT_TARGET_TEMPERATURE, SU
 Also TURN_ON, TURN_OFF, 
 
 ### Error Handling
-the code now counts the  total no of reads, writes and errors on the RS485 link per thermostat. The most common errors (on my installation) are CRC and NDR (No Data Read). The code looks for other errors but these are rarely if ever seen, so these will be grouped together as Other. Read transactions are far more frequent than writes, so counts are gathered seperately for these.
+the code now counts the  total no of reads, writes and errors on the RS485 link per thermostat.
+The most common errors (on my installation) are CRC and NDR (No Data Read). The code looks for
+other errors but these are rarely if ever seen, so these will be grouped together as Oth.
+Read transactions are far more frequent than writes, so counts are gathered seperately for these.
 2 more Additional attributes have been added for each thermostat
-Read Stats is a string in the form <err%> <crc count> <ndr count> <oth count> <hard count>
-    the total error count (sum crc, NDR & Oth) is divided by thge total no of reads to give err%
-Write Stats is a string in the form <write count> <crc count> <ndr count> <oth count> <hard count>
-    far few writes are likely so the total count is included.
+Read Stats is a string in the form "err%" "crc count" "ndr count" "oth count" "hard count"
+    the total error count (sum of crc, NDR & Oth) is divided by the total no of reads to give err%
+Write Stats is a string in the form "write count" "crc count" "ndr count" "oth count" "hard count"
+    far fewer writes are likely so the total count is included.
+
 Use Developer Tools or Flex Table card to see these error counts
 
-If a line error occurs, the read or write is retried (upto 5 times). If a retry is successful, no error is reported to the logs. If the retry maximum is reached a hard error is counted and an error reported to the log 
+If a line error occurs, the read or write is retried (upto 5 times). If a retry is successful,
+no error is reported to the logs. If the retry maximum is reached a hard error is counted and an
+error reported to the log 
