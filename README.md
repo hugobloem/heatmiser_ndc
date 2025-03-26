@@ -70,7 +70,7 @@ logger:
   default: warning
   logs:
     custom_components.heatmiser_ndc.climate: debug
-    custom_components.heatmiser_ndc.heatmiser: info
+    custom_components.heatmiser_ndc.rs485: info
    
 ```
 
@@ -95,18 +95,25 @@ ie HVAC_MODE_HEAT, HVAC_MODE_OFF, HVAC_MODE_AUTO, SUPPORT_TARGET_TEMPERATURE, SU
 Also TURN_ON, TURN_OFF, 
 
 ### Error Handling
-the code now counts the  total no of reads, writes and errors on the RS485 link per thermostat.
-The most common errors (on my installation) are CRC and NDR (No Data Read). The code looks for
-other errors but these are rarely if ever seen, so these will be grouped together as Oth.
-Read transactions are far more frequent than writes, so counts are gathered seperately for these.
-2 more Additional attributes have been added for each thermostat
-Read Stats is a string in the form "err%" "crc count" "ndr count" "oth count" "hard count"
-    the total error count (sum of crc, NDR & Oth) is divided by the total no of reads to give err%
-Write Stats is a string in the form "write count" "crc count" "ndr count" "oth count" "hard count"
-    far fewer writes are likely so the total count is included.
-
-Use Developer Tools or Flex Table card to see these error counts
-
+The code now recognises line errors and attempts to recover from these. 
 If a line error occurs, the read or write is retried (upto 5 times). If a retry is successful,
 no error is reported to the logs. If the retry maximum is reached a hard error is counted and an
-error reported to the log 
+error reported to the log. Any error that is recovered counts as a soft error.
+The most common errors (on my installation) are CRC and NDR (No Data Read). The code looks for
+other errors but these are rarely if ever seen, so these will be grouped together as Oth(er).
+2 more Additional attributes have been added for each thermostat
+Read Stats is a string in the form "soft error%" "hard error count"
+    "soft error %" is total read soft error count divided by the total no of reads
+Write Stats is a string in the form "write count" "soft errors" "hard errors"
+    far fewer writes are likely so the total count is included.
+
+In addition, the RS485 module counts the total reads & writes to the line and outputs log data (INFO level) evry 10,000 calls
+It logs total count, crc errors, ndr errors, oth errors, hard errors 
+
+Use Developer Tools or Flex Table card to see the per thermostat errors
+
+### Broken Serial line
+The code now detects a serial line exception, and attempts to recover
+
+### Setting the thermostat time clock
+I have tried to implemented code to reset the thermostat clock. This uses Preset Modes, and can be accessed form the UI. At present, the code appears to send the correct data to the line, but the clock does not change. More work needed here
