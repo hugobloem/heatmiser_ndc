@@ -1,6 +1,6 @@
 Heatmiser_ndc Changelog
 
-V 1.?.?  Feb 2025
+V 1.7.1  Mar 2025
 Further simplifications
 Rs485.py
 1. Combine Read_stat & write_stat code, so now mostly common
