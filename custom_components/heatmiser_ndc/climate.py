@@ -1,16 +1,13 @@
 """
-  Home Assistant component to access PRT Heatmiser themostats using the V3 protocol
-  via the heatmiser library
+  Home Assistant component to access PRT Heatmiser themostats
+  via the RS485 library
 """
-
-# Dec 2020 NDC version
-# In this code, we will not access the dcb directly (as other versions have done)
-# We let the library decode and access the dcb fields
 
 import logging
 from typing import List
+from datetime import datetime, timezone, timedelta
 
-from . import heatmiser
+from . import rs485
 import voluptuous as vol
 
 from homeassistant.components.climate import (
@@ -35,6 +32,7 @@ _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "heatmiser_ndc"
 CONF_THERMOSTATS = "tstats"
+VERSION = "1.7.1"
 
 TSTAT_SCHEMA = vol.Schema(
     {vol.Required(CONF_ID): vol.Range(1, 32),
@@ -60,24 +58,23 @@ COMPONENT_SCHEMA = vol.Schema(
 )
 CONFIG_SCHEMA = vol.Schema({DOMAIN: COMPONENT_SCHEMA}, extra=vol.ALLOW_EXTRA)
 
-
 def setup_platform(hass, config, add_entities, discovery_info=None):
-    """Set up the heatmiser platform"""
-    _LOGGER.info("Setting up platform - Code version 1.4.1")
+
+    _LOGGER.info(f'Setting up platform: Domian {DOMAIN} Version {VERSION}')
 
     host = config[CONF_HOST]
     port = str(config.get(CONF_PORT))
     statlist = config[CONF_THERMOSTATS]
-    serial_hub = heatmiser.HM_RS485(host, port)
+
+    #Setup the RS485 serial interface
+    serial = rs485.HM_RS485(host, port)
 
     # Add all entities - False in call means update is not called before adding
     # because this slows down startup which generates warning message
     # However, entities are added with zero initial values
     # These are soon updated after setup completes
     
-    add_entities([HMV3Stat(stat, serial_hub)
-                  for stat in statlist], False, )
-
+    add_entities([HMV3Stat(stat,serial) for stat in statlist], False, )
     _LOGGER.info("Platform setup complete")
 
 
@@ -90,56 +87,98 @@ class HMV3Stat(ClimateEntity):
         | ClimateEntityFeature.TURN_OFF
         | ClimateEntityFeature.TURN_ON
         | ClimateEntityFeature.TARGET_HUMIDITY
+        | ClimateEntityFeature.PRESET_MODE
     )
-    _enable_turn_on_off_backwards_compatibility = False
-
-    def __init__(self, device, serial_if):
+   
+    def __init__(self, device, rs485_line):
         
+        self._statno = device[CONF_ID]
         self._name = device[CONF_NAME]
-        self.therm = heatmiser.HeatmiserStat(device[CONF_ID], self._name, serial_if)
-        
-        _LOGGER.info(f'Initialised thermostat {self._name}')
+        self.rs485 = rs485_line
+        #Allocate space and initialise dcb to 0. Necessary to avoid crash, if first read from stat fails 
+        self.dcb = [0] * 160
 
+        # Maintain statistics for each stat. [0] = read, [1] = write
+        self.rw_count =    [0,0]  #read/write count
+        self.soft_errors = [0,0]  #CRC, NDR or other errors
+        self.hard_errors = [0,0]  #if retries fail
+
+        _LOGGER.info(f'Initialised stat {self._statno} = {self._name}')  
+
+    # local methods to help assemble the extra attributes
+
+    def _get_day_and_time (self) :
+        _day_of_week = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        return f'{_day_of_week[self.dcb[36]-1]} {self.dcb[37]:0>2d}:{self.dcb[38]:0>2d}:{self.dcb[39]:0>2d}' 
+
+    def _comfort_string (self, idx) :
+        # returns comfort setting string with 4 entries in the form 
+        # hh:mm tt, hh:mm tt, hh:mm tt, hh:mm tt,
+        _string = (
+            f'{self.dcb[idx]:0>2d}:{self.dcb[idx+1]:0>2d} {self.dcb[idx+2]}; '
+            f'{self.dcb[idx+3]:0>2d}:{self.dcb[idx+4]:0>2d} {self.dcb[idx+5]}; '
+            f'{self.dcb[idx+6]:0>2d}:{self.dcb[idx+7]:0>2d} {self.dcb[idx+8]}; '
+            f'{self.dcb[idx+9]:0>2d}:{self.dcb[idx+10]:0>2d} {self.dcb[idx+11]};'
+        )
+        return _string
         
+    def _get_day_settings (self, dayno) :
+        if self.dcb[16] == 0 :   # 5/2 mode
+            return '00:00 00; 00:00 00; 00:00 00; 00:00 00;'
+        else :
+            return self._comfort_string (dayno*12 + 52)
+
+    def _get_read_statistics (self) :
+        # return read stats - over time large number of reads, so show error %
+        # returns string "Err% hard" for read transactions
+       
+        _count = self.rw_count [0]
+        _err_rate = 0 if _count == 0 else self.soft_errors[0]/_count
+        return f'{_err_rate:.3%}  {self.hard_errors[0]}'
+        
+    def _get_write_statistics (self) :
+        # far fewer writes, so return "Count soft hard"
+        return f'{self.rw_count[1]} {self.soft_errors[1]} {self.hard_errors[1]}'
+
     @property
     def extra_state_attributes(self) -> dict:
         _result = {
-            "vendor id": self.therm.get_vendor_id(),
-            "version": self.therm.get_version(),
-            "floor limit state": self.therm.get_floor_limit_state(),
-            "model": self.therm.get_model(),
-            # TBD Temp format goes in here
-            "sw diff" : self.therm.get_sw_diff(),
-            "cal offset" : self.therm.get_cal_offset(),
-            "output delay" : self.therm.get_output_delay(),
-            "address" : self.therm.get_address(),
-            "up/down limit" : self.therm.get_updown_limit(),
-            "sensor select" : self.therm.get_sensor_select(),
-            "opt start" : self.therm.get_opt_start(),
-            "rate of change" : self.therm.get_rate_of_change(),
-            "program mode" : self.therm.get_program_mode(),
-            "floor limit" : self.therm.get_floor_limit(),
-            "floor limit enable" : self.therm.get_floor_limit_enable(),
-            "key lock" : self.therm.get_key_lock(),
-            "hol hours" : self.therm.get_hol_hours(),
-            "temp hold" : self.therm.get_temp_hold(),
-            "remote air temp" : self.therm.get_remote_air_temp(),
-            "floor temp" : self.therm.get_floor_temp(),
-            "built in temp" : self.therm.get_built_in_temp(),
-            "error code" : self.therm.get_error_code(),
-            "heat state" : self.therm.get_heat_state(),
-            "time" : self.therm.get_day_and_time(),
-            "weekday" : self.therm.get_weekday_settings(),
-            "weekend" : self.therm.get_weekend_settings(),
-            "mon" : self.therm.get_day_settings(1),
-            "tue" : self.therm.get_day_settings(2),
-            "wed" : self.therm.get_day_settings(3),
-            "thu" : self.therm.get_day_settings(4),
-            "fri" : self.therm.get_day_settings(5),
-            "sat" : self.therm.get_day_settings(6),
-            "sun" : self.therm.get_day_settings(7),
-            "read stats" : self.therm.get_read_statistics(),
-            "write stats" : self.therm.get_write_statistics(),
+            "vendor id"          : self.dcb [2],
+            "version"            : self.dcb [3] & 0x7f,
+            "floor limit state"  : self.dcb [3] & 0x80,
+            "model"              : self.dcb [4],
+            "temp format"        : self.dcb [5],
+            "sw diff"            : self.dcb [6],
+            "cal offset"         : self.dcb[8] * 256 + self.dcb[9],
+            "output delay"       : self.dcb[10],
+            "address"            : self.dcb[11],
+            "up/down limit"      : self.dcb[12],
+            "sensor select"      : self.dcb[13],
+            "opt start"          : self.dcb[14],
+            "rate of change"     : self.dcb[15],
+            "program mode"       : self.dcb[16],
+            "floor limit"        : self.dcb[19],
+            "floor limit enable" : self.dcb[20],
+            "key lock"           : self.dcb[22],
+            "hol hours"          : self.dcb[24] * 256 + self.dcb[25],
+            "temp hold"          : self.dcb[26] * 256 + self.dcb[27],
+            "remote air temp"    : (self.dcb[28] * 256 + self.dcb[29])/10,
+            "floor temp"         : (self.dcb[30] * 256 + self.dcb[31])/10,
+            "built in temp"      : (self.dcb[32] * 256 + self.dcb[33])/10,
+            "error code"         : self.dcb[34],
+            "heat state"         : self.dcb[35],
+            "time"               : self._get_day_and_time(),
+            "weekday"            : self._comfort_string (40),
+            "weekend"            : self._comfort_string (52),
+            "mon"                : self._get_day_settings(1),
+            "tue"                : self._get_day_settings(2),
+            "wed"                : self._get_day_settings(3),
+            "thu"                : self._get_day_settings(4),
+            "fri"                : self._get_day_settings(5),
+            "sat"                : self._get_day_settings(6),
+            "sun"                : self._get_day_settings(7),
+            "read stats"         : self._get_read_statistics(),
+            "write stats"        : self._get_write_statistics(),
         } 
         _LOGGER.debug(f'extra state attributes returning {_result}')
         return _result
@@ -151,15 +190,13 @@ class HMV3Stat(ClimateEntity):
 
     @property
     def unique_id(self):
-        _stat = self.therm.get_thermostat_id()
-        _id = f"Heatmiser Prt {_stat}"
+        _id = f"Heatmiser Prt {self._statno}"
         _LOGGER.debug(f'unique_id returning {_id}')
         return _id
         
     @property
     def temperature_unit(self):
-        _temp_format = self.therm.get_temperature_format()
-        value = UnitOfTemperature.CELSIUS if (_temp_format == 0) else UnitOfTemperature.FAHRENHEIT
+        value = UnitOfTemperature.CELSIUS if (self.dcb[5] == 0) else UnitOfTemperature.FAHRENHEIT
         _LOGGER.debug(f'temperature unit returning {value}')
         return value
 
@@ -168,11 +205,10 @@ class HMV3Stat(ClimateEntity):
         # Returns Hvac mode - Off / Auto / Heat
         # stat has frost protect on/off and heat state on/off
         # we map frost protect to hvac mode off
-        _run_mode=self.therm.get_run_mode()
-        _heat_state =self.therm.get_heat_state()
-        if _run_mode == 1:   #frost protect
+        
+        if self.dcb[23] == 1:   #run mode = frost protect
             value = HVACMode.OFF
-        elif _heat_state == 0:  # not heating
+        elif self.dcb[35] == 0:  # heat state not heating
             value = HVACMode.AUTO
         else:
             value = HVACMode.HEAT
@@ -185,7 +221,6 @@ class HMV3Stat(ClimateEntity):
         return PRECISION_WHOLE
 
     # TBD - max , min temps should be different if stat is in F not C
-    # TBD ditto humidity (proxy for frostor humidity ie frost setting
     @property
     def min_temp(self):
         _LOGGER.debug(f'min temp returning 5')
@@ -195,24 +230,6 @@ class HMV3Stat(ClimateEntity):
     def max_temp(self):
         _LOGGER.debug(f'max temp returning 35')
         return 35
-
-    @property
-    def hvac_modes(self) -> List[str]:
-        result = self._attr_hvac_modes
-        _LOGGER.debug(f'hvac modes returning {result}')
-        return result
-
-    @property
-    def current_temperature(self):
-        temp = self.therm.get_current_temp()
-        _LOGGER.debug(f'Current temperature returned {temp}')
-        return (temp)
-
-    @property
-    def target_temperature(self):
-        temp = self.therm.get_target_temp()
-        _LOGGER.debug(f'Target temp returned {temp}')
-        return temp
 
     @property
     def min_humidity(self):
@@ -225,26 +242,95 @@ class HMV3Stat(ClimateEntity):
         return 17
 
     @property
+    def hvac_modes(self) -> List[str]:
+        result = self._attr_hvac_modes
+        _LOGGER.debug(f'hvac modes returning {result}')
+        return result
+
+    @property
+    def current_temperature(self):
+    # Heatmiser stat has a floor and remote or builtin air sensor
+    # Return the air sensor (builtin or remote) if present, otherwise floor sensor
+
+        senselect = self.dcb[13]
+        if senselect in [0, 3]:    # Built In sensor
+            idx = 32
+        elif senselect in [1, 4]:  # remote  air sensor
+            idx = 28
+        else:
+            idx = 30    # assume floor sensor
+
+        value = (self.dcb[idx] * 256 + self.dcb[idx + 1])/10
+        
+        _LOGGER.debug(f'Current temperature returned {value}')
+        return (value)
+
+    @property
+    def target_temperature(self):
+        temp = self.dcb[18]
+        _LOGGER.debug(f'Target temp returned {temp}')
+        return temp
+
+    @property
     def current_humidity(self):
         # same as target humidity
-        temp = self.therm.get_frost_temp()
+        temp = self.dcb[17]
         _LOGGER.debug(f'Current humidity returned {temp}')
         return temp
 
     @property
     def target_humidity(self):
-        temp = self.therm.get_frost_temp()
+        temp = self.dcb[17]
         _LOGGER.debug(f'Target humidity returned {temp}')
         return temp
+    
+    @property
+    def preset_modes(self):
+        return ["Set time","Set UTC","Set time+offset"]
+
+    @property
+    def preset_mode(self):
+        """Return the current preset mode."""
+        return "Set time"
+
+    ######################################################
+    # Now methods to write to the stat
+
+    def _write_to_stat (self, index, payload):
+        #local method to call write stat and update statistics
+        _status, _errors = self.rs485.write_stat(self._statno, index, payload)
+        if _status != 0:
+            self.hard_errors [1] += 1
+        self.rw_count [1] +=1 
+        self.soft_errors [1] = self.soft_errors [1] + _errors 
+
+    def set_preset_mode(self, preset_mode):
+        _LOGGER.info(f'set preset mode {preset_mode}')
+        _dt = 0
+        if preset_mode == "Set time":
+            _dt = datetime.now()  # regular local time
+        elif preset_mode == "Set UTC":
+            _dt = datetime.now(timezone.utc)  #UTC time aka GMT
+        elif preset_mode == "Set time+offset":
+            # special offset time to match clock on elec meter 
+            _dt = datetime.now(timezone.utc) + timedelta(minutes=34, seconds =39)
+
+        if _dt != 0:
+            #_payload = [_dt.weekday(), _dt.hour, _dt.minute, _dt.second]
+            _payload = [23]  # test - set hour to 23
+            _LOGGER.info (f'writing time {_payload}')
+            #self._write_to_stat (36, _payload)
+            self._write_to_stat (37, _payload)
+
+        
+
     
     def set_hvac_mode(self, hvac_mode):
         # If Off , set stat to frost protect mode
         # If Heat or Auto, set stat to normal
         _LOGGER.debug(f'set hvac mode to {hvac_mode}')
-        if hvac_mode == HVACMode.OFF:
-            self.therm.set_run_mode(1)
-        else:
-            self.therm.set_run_mode(0)
+        _run_mode = 1 if hvac_mode == HVACMode.OFF else 0
+        self._write_to_stat (23, [_run_mode])
        
     def turn_off(self):
         _LOGGER.debug(f'turn off called')
@@ -255,18 +341,29 @@ class HMV3Stat(ClimateEntity):
         self.set_hvac_mode(HVACMode.AUTO)
 
     def set_temperature(self, **kwargs):
-        temperature = kwargs.get(ATTR_TEMPERATURE)
-        _LOGGER.debug(f'Set target temp: {temperature}')
-        self._target_temperature = int(temperature)
-        self.therm.set_target_temp(self._target_temperature)
+        temp = kwargs.get(ATTR_TEMPERATURE)
+        _LOGGER.debug(f'Set target temp: {temp}')
+        temp = int(temp)
+        if 35 >= temp >= 5:
+            self._write_to_stat(18, [temp])
 
     def set_humidity(self, humidity):
         _hum = int(humidity) 
         _LOGGER.debug(f'set humidity to {_hum}')
-        self.therm.set_frost_temp(_hum)
+        if 7 <= _hum <= 17:
+            self._write_to_stat(17, [_hum])
+        
+    # Now method to refresh the whole dcb from the stat
 
     def update(self):
-        """Get the latest data."""
         _LOGGER.debug(f'Update started for {self._name}')
-        self.therm.read_dcb()
-        _LOGGER.debug(f'Update done')
+        
+        _status,data,_errors = self.rs485.read_stat(self._statno)
+        if _status == 0:
+            self.dcb = data
+        else:
+            self.hard_errors[0] += 1
+        
+        self.rw_count[0] +=1 
+        self.soft_errors[0] = self.soft_errors[0] + _errors 
+        _LOGGER.debug(f'Update done for {self._name}')

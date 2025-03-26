@@ -48,7 +48,15 @@ The modes can be controlled from the UI, or by calling the relevant services fro
 The standard climate component supports a humidity level (while the heatmiser stat does not). So the code now allows the frost protect temp to be read and modified via the humidity level. It accepts values in the range 7 to 17 as per the PRT stat. Thermostat cards will display this "humidity" and allow it to be changed.
 
 ### Logging
-The component logs lots of events at debug, error, info & warning levels. Logging levels can be controlled by including something like the following in the configuration.yaml file
+The component logs lots of events at debug, info, warning, error levels.
+Debug - logging the path through the code and data
+Info  - startup info, rs485 line stats, soft line errors
+Warning -  Unused at present
+Error - unrecoverable line error (too many retries), broken serial line
+   
+
+
+Logging levels can be controlled by including something like the following in the configuration.yaml file
 ```
 logger:
   default: warning

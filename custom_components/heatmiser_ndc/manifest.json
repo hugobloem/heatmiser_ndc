@@ -1,6 +1,6 @@
 {
   "domain": "heatmiser_ndc",
-  "name": "Heatmiser",
+  "name": "Heatmiser_ndc",
   "documentation": "https://www.home-assistant.io/components/heatmiser",
   "requirements": [
     "pyserial==3.5",
@@ -8,5 +8,5 @@
   ],
   "dependencies": [],
   "codeowners": [],
-  "version": "1.4.1"
+  "version": "1.7.1"
 }
