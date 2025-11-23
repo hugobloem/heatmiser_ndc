@@ -90,7 +90,6 @@ class HMV3Stat(ClimateEntity):
         ClimateEntityFeature.TARGET_TEMPERATURE
         | ClimateEntityFeature.TURN_OFF
         | ClimateEntityFeature.TURN_ON
-        | ClimateEntityFeature.TARGET_HUMIDITY
         | ClimateEntityFeature.PRESET_MODE
     )
    
@@ -236,16 +235,6 @@ class HMV3Stat(ClimateEntity):
         return 35
 
     @property
-    def min_humidity(self):
-        _LOGGER.debug(f'min humidity returning 7')
-        return 7
-
-    @property
-    def max_humidity(self):
-        _LOGGER.debug(f'max humidity returning 17')
-        return 17
-
-    @property
     def hvac_modes(self) -> List[str]:
         result = self._attr_hvac_modes
         _LOGGER.debug(f'hvac modes returning {result}')
@@ -273,19 +262,6 @@ class HMV3Stat(ClimateEntity):
     def target_temperature(self):
         temp = self.dcb[18]
         _LOGGER.debug(f'Target temp returned {temp}')
-        return temp
-
-    @property
-    def current_humidity(self):
-        # same as target humidity
-        temp = self.dcb[17]
-        _LOGGER.debug(f'Current humidity returned {temp}')
-        return temp
-
-    @property
-    def target_humidity(self):
-        temp = self.dcb[17]
-        _LOGGER.debug(f'Target humidity returned {temp}')
         return temp
     
     @property
@@ -325,9 +301,6 @@ class HMV3Stat(ClimateEntity):
             _LOGGER.info (f'writing time {_payload}')
             #self._write_to_stat (36, _payload)
             self._write_to_stat (37, _payload)
-
-        
-
     
     def set_hvac_mode(self, hvac_mode):
         # If Off , set stat to frost protect mode
@@ -350,12 +323,6 @@ class HMV3Stat(ClimateEntity):
         temp = int(temp)
         if 35 >= temp >= 5:
             self._write_to_stat(18, [temp])
-
-    def set_humidity(self, humidity):
-        _hum = int(humidity) 
-        _LOGGER.debug(f'set humidity to {_hum}')
-        if 7 <= _hum <= 17:
-            self._write_to_stat(17, [_hum])
         
     # Now method to refresh the whole dcb from the stat
 
