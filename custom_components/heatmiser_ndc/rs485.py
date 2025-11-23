@@ -56,13 +56,26 @@ class HM_RS485:
         write_stat - writes a list of values to the stat
     """
     def __init__(self, ipaddress: None, port: None, serialid: None):
-        if serialid is None and ipaddress and port:
-            _LOGGER.info(f'Initialising RS485 {ipaddress} : {port}')
-            self.serport = serial.serial_for_url("socket://" + ipaddress + ":" + port)
-        elif serialid and ipaddress is None and port is None:
-            _LOGGER.info(f'Initialising RS485 on {serialid}')
+        self.ipaddress = ipaddress
+        self.port = port
+        self.serialid = serialid
+        self._initialize_serial()
+
+        # Maintain statistics for the line
+        self.total      = 0 #total reads & writes
+        self.crc_count  = 0 #crc errors - soft
+        self.ndr_count  = 0 #No Data Read NDR errors - soft
+        self.oth_count  = 0 #Other errors - soft
+        self.hard_count = 0 #if retries fail - hard
+
+    def _initialize_serial(self):
+        if (self.serialid is None) and self.ipaddress:
+            _LOGGER.info(f'Initialising RS485 {self.ipaddress} : {self.port}')
+            self.serport = serial.serial_for_url("socket://" + self.ipaddress + ":" + self.port)
+        elif self.serialid and (self.ipaddress is None):
+            _LOGGER.info(f'Initialising RS485 on {self.serialid}')
             self.serport = serial.Serial()
-            self.serport.port = serialid
+            self.serport.port = self.serialid
         else:
             raise ValueError(f"Provide one of ipaddress and port or serialid, not both:\n ip: {ipaddress}, port: {port}: serialid: {serialid}") 
         self.serport.baudrate = 4800
@@ -74,13 +87,6 @@ class HM_RS485:
         self.serport.close()  # just in case it was left open
         self.serport.open()
         _LOGGER.debug("Serial port opened OK")
-
-        # Maintain statistics for the line
-        self.total      = 0 #total reads & writes
-        self.crc_count  = 0 #crc errors - soft
-        self.ndr_count  = 0 #No Data Read NDR errors - soft
-        self.oth_count  = 0 #Other errors - soft
-        self.hard_count = 0 #if retries fail - hard
 
     def _lohibytes(self, value):
         # splits value into 2 bytes, returns lo, hi bytes
@@ -151,8 +157,8 @@ class HM_RS485:
             except serial.SerialException as err:
                 #probably a broken pipe error - line disconnected, powered off etc
                 _LOGGER.error(f'Serial exception:  stat= {stat} err= {err}')
-                self .serport.close()  # just in case it was left open
-                self.serport.open()
+                self.serport.close()  # just in case it was left open
+                self._initialize_serial()
                 _LOGGER.debug("Serial port re-opened")
                 continue
 
