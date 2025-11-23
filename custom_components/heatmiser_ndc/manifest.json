@@ -1,12 +1,14 @@
 {
   "domain": "heatmiser_ndc",
-  "name": "Heatmiser_ndc",
-  "documentation": "https://www.home-assistant.io/components/heatmiser",
+  "name": "Heatmiser",
+  "documentation": "https://github.com/hugobloem/heatmiser_ndc",
+  "integration_type": "hub",
+  "iot_class": "local_polling",
   "requirements": [
     "pyserial==3.5",
     "pyserial-asyncio==0.5"
   ],
   "dependencies": [],
-  "codeowners": [],
+  "codeowners": ["@hugobloem"],
   "version": "1.7.1"
 }
