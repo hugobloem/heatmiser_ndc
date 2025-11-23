@@ -55,10 +55,16 @@ class HM_RS485:
         read_stat  - read all fields from a stat
         write_stat - writes a list of values to the stat
     """
-    def __init__(self, ipaddress, port):
-        _LOGGER.info(f'Initialising RS485 {ipaddress} : {port}')
-
-        self.serport = serial.serial_for_url("socket://" + ipaddress + ":" + port)
+    def __init__(self, ipaddress: None, port: None, serialid: None):
+        if serialid is None and ipaddress and port:
+            _LOGGER.info(f'Initialising RS485 {ipaddress} : {port}')
+            self.serport = serial.serial_for_url("socket://" + ipaddress + ":" + port)
+        elif serialid and ipaddress is None and port is None:
+            _LOGGER.info(f'Initialising RS485 on {serialid}')
+            self.serport = serial.Serial()
+            self.serport.port = serialid
+        else:
+            raise ValueError("Provide one of ipaddress and port or serialid, not both") 
         self.serport.baudrate = 4800
         self.serport.bytesize = serial.EIGHTBITS
         self.serport.parity = serial.PARITY_NONE
