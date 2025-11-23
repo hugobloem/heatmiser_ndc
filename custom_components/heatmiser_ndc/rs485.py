@@ -182,28 +182,26 @@ class HM_RS485:
     def write_stat(self, stat, index, payload):
         # writes the payload (a list of values) to the stat. index gives position in dcb
         # returns status, error count
-        
-        sema.acquire() # stop Hass multithreading calls to the serial line
-        _LOGGER.info(f'write_stat- no, index, payload = {stat} {index} {payload}')
-        
-         #form command to write value to stat
-        startlo, starthi = self._lohibytes(index)
-        lengthlo, lengthhi = self._lohibytes(len(payload))
-        _command = [stat, 10+len(payload), 129, 1,
-                   startlo, starthi, lengthlo, lengthhi] + payload
-        _status, _reply, _errors = self._send_read_check (stat, _command )
-        sema.release()
+
+        with sema:
+            _LOGGER.info(f'write_stat- no, index, payload = {stat} {index} {payload}')
+            
+             #form command to write value to stat
+            startlo, starthi = self._lohibytes(index)
+            lengthlo, lengthhi = self._lohibytes(len(payload))
+            _command = [stat, 10+len(payload), 129, 1,
+                       startlo, starthi, lengthlo, lengthhi] + payload
+            _status, _reply, _errors = self._send_read_check (stat, _command )
         return _status, _errors
 
 
     def read_stat(self,stat): 
         # reads the whole dcb from the stat, returns status, raw dcb, error count
-       
-        sema.acquire()  
-        _LOGGER.debug(f'read_stat - {stat}')
-        
-        # use standard read all command
-        _command = [stat, 10, 129, 0, 0, 0, 0xff, 0xff]
-        _status, _reply, _errors = self._send_read_check ( stat, _command )
-        sema.release()
+
+        with sema:
+            _LOGGER.debug(f'read_stat - {stat}')
+            
+            # use standard read all command
+            _command = [stat, 10, 129, 0, 0, 0, 0xff, 0xff]
+            _status, _reply, _errors = self._send_read_check ( stat, _command )
         return _status, _reply, _errors
