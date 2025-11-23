@@ -4,17 +4,19 @@ Custom Home Assistant Component for Heatmiser PRT-N Stats (version 1.3.1)
 This component accesses the stats via an IP to RS485 adaptor (I use an ATC_1000)
 
 To use this custom component:
-  1. Create a folder `heatmiser_ndc` within `config/custom_components` folder on your HA system
-  2. Upload the files `climate.py`, `heatmiser.py`, `manifest.json` and `_init_.py` to the new `config/custom_components/heatmiser_ndc` folder
-  3. and then add the following (edited for your setup) to your configuration.yaml:
+  1. Add the repository to HACS with the following link:
+     
+     [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=hugobloem&repository=heatmiser_ndc&category=integration)
+  3. Add the configuration to your `configuration.yaml` file, specifying either the hostname and port, or the serialid depending on how you have connected the RS485 converter.
 
 
 Example configuration.yaml
 ```
  climate:
   - platform: heatmiser_ndc
-    host: 192.168.0.19
+    host: 192.168.0.19 # If you're using the host do not specify the serialid
     port: 23
+    serialid: "/dev/to/device" # If you're using the serial id do not specify the host and port
     scan_interval: 20
     tstats:
       - id: 1
@@ -25,6 +27,8 @@ Example configuration.yaml
         name: Guest Bed
       - id: 4
 ```
+
+If using the serialid you can find the link under Settings -> System -> Hardware -> All Hardware -> ttyUSBx.
 
 # Notes
 This version has been derived from the original Heatmiser component and the HeatmiserV3 library. The library has been incorporated into this custom component (heatmiser.py) to add logging and fix a few issues.
