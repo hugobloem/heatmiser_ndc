@@ -64,7 +64,7 @@ class HM_RS485:
             self.serport = serial.Serial()
             self.serport.port = serialid
         else:
-            raise ValueError("Provide one of ipaddress and port or serialid, not both:\n ip: {ipaddress}, port: {port}: serialid: {serialid}") 
+            raise ValueError(f"Provide one of ipaddress and port or serialid, not both:\n ip: {ipaddress}, port: {port}: serialid: {serialid}") 
         self.serport.baudrate = 4800
         self.serport.bytesize = serial.EIGHTBITS
         self.serport.parity = serial.PARITY_NONE
