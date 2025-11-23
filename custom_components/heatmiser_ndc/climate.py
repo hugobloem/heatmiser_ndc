@@ -32,6 +32,7 @@ _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "heatmiser_ndc"
 CONF_THERMOSTATS = "tstats"
+CONF_SERIALID = "serialid"
 VERSION = "1.7.1"
 
 TSTAT_SCHEMA = vol.Schema(
@@ -43,16 +44,18 @@ TSTATS_SCHEMA = vol.All(cv.ensure_list, [TSTAT_SCHEMA])
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
-        vol.Required(CONF_HOST): cv.string,
-        vol.Required(CONF_PORT): cv.port,
+        vol.Optional(CONF_HOST): cv.string,
+        vol.Optional(CONF_PORT): cv.port,
+        vol.Optional(CONF_SERIALID): cv.string,
         vol.Required(CONF_THERMOSTATS, default=[]): TSTATS_SCHEMA,
     }
 )
 
 COMPONENT_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_HOST): cv.string,
-        vol.Required(CONF_PORT): cv.port,
+        vol.Optional(CONF_HOST): cv.string,
+        vol.Optional(CONF_PORT): cv.port,
+        vol.Optional(CONF_SERIALID): cv.string,
         vol.Required(CONF_THERMOSTATS): TSTATS_SCHEMA,
     }
 )
@@ -62,12 +65,13 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
 
     _LOGGER.info(f'Setting up platform: Domian {DOMAIN} Version {VERSION}')
 
-    host = config[CONF_HOST]
+    host = config.get(CONF_HOST)
     port = str(config.get(CONF_PORT))
+    serialid = config.get(CONF_SERIALID)
     statlist = config[CONF_THERMOSTATS]
 
     #Setup the RS485 serial interface
-    serial = rs485.HM_RS485(host, port)
+    serial = rs485.HM_RS485(host, port, serialid)
 
     # Add all entities - False in call means update is not called before adding
     # because this slows down startup which generates warning message
