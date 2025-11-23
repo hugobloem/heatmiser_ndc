@@ -1,0 +1,38 @@
+Heatmiser_ndc Changelog
+
+V 1.7.1  Mar 2025
+Further simplifications
+Rs485.py
+1. Combine Read_stat & write_stat code, so now mostly common
+2. Logs line stats; read & write now combined
+3. Handle SerialException - if line breaks (power off rs485 adaptor etc)
+   Reopen line. Seems to work OK
+     
+
+
+V 1.5.1 Jan 2025
+1. Restructured and simplified. Heatmiser.py renamed as rs485.py. This now just contains code to read and write the serial line.
+   This will enable stand alone tests to access serial line
+2. Climate.py simplified
+3. Reporting of line errors simplified. RS485.py now counts serial line reads and writes, and errors (CRC, NDR, other and hard).
+   These are reported to the log at info level, after every few thousand reads  
+4. After some weeks of logging, the error rates on my setup are still v low (c 1 per 4000 accesses). Ive not yet seen an "Other" or "hard" error
+   Climate.py still saves statistics per stat to additional attributes but these are now in the form 
+   for reads  - Error rate%, Hard error count
+   for writes - Total, soft error count, hard error count
+
+
+
+V 1.4.1 Dec 2024
+
+1. Fix inconsistent exception handling
+2. Fix setting Frost setting (aka target humidity) - code already existed, but entity attribute not set.
+   Can now be changed from Thermostat card
+3. Fix multi thread clashes on serial line, when write operations were made
+   semaphore added to lock
+4. Added error counting for each stat - for line errors ie CRC, No Data Read (=NDR), Other
+   These are counted separatly for read and write operations
+   Reported via additioanl attributes read stats, write stats
+5. Add retries after line errors - if an error occurs on reading or writing the stat, the operation is retried
+   Retry limit set to 5 currently. If the retry limit is exceeded, it is counted as a hard error, and reported
+6. Various simplifications to code
