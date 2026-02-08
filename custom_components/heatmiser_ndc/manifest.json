@@ -7,7 +7,7 @@
   "iot_class": "local_polling",
   "requirements": [
     "pyserial==3.5",
-    "pyserial-asyncio==0.5"
+    "pyserial-asyncio-fast==0.16"
   ],
   "dependencies": [],
   "codeowners": ["@hugobloem"],
